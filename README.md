@@ -7,7 +7,10 @@ module load bioinfo/bcftools-1.9
 module load system/Python-3.6.3
 python3 -m venv parenv
 source parenv/bin/activate
-pip install -r requirements.txt
+for line in $(cat requirements.txt)
+do
+  pip install $line 
+done
 
 paragraph_bin="/home/faraut/dynawork/SeqOccin/giab/softwares/paragraph/bin"
 export PATH=$paragraph_bin:$PATH
