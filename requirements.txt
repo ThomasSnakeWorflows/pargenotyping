@@ -1,0 +1,11 @@
+nose
+mock
+cython
+intervaltree
+pysam
+jsonschema
+pylint
+snakemake
+pandas
+drmaa
+pep8

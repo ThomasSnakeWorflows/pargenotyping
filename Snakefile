@@ -37,7 +37,7 @@ inputvcf = os.path.abspath(config['inputvcf'])
 
 workdir: config['workdir']
 
-localrules: sampleinfo, variants
+localrules: sampleinfo, variants, merge
 
 wildcard_constraints:
     sample="[A-Za-z0-9\-]+"
@@ -106,5 +106,14 @@ rule merge:
         expand("{sample}/genotypes.vcf.gz", sample=samples.index)
     output:
         "genotypes.vcf.gz"
+    params:
+        num_sample=lambda w: len(samples.index)
     shell:
-        "bcftools merge {input} -Oz -o {output}"
+        """
+        if [ "{params.num_sample}" != 1 ];
+        then
+            bcftools merge {input} -Oz -o {output}
+        else
+            cp {input} {output}
+        fi
+        """
