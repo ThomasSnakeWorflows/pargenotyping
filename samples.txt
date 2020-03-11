@@ -1,0 +1,2 @@
+sample	bam
+HG002 /work2/genphyse/dynagen/tfaraut/CNVPipeline/work/vargoats/tinydata/HG002.bam

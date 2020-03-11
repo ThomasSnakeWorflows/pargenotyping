@@ -1,0 +1,11 @@
+__default__:
+  mem: 8
+  name: "{rule}.{wildcards}"
+  time: "96:00:00"
+  output: "logs/cluster/{rule}.{wildcards}.out"
+  error: "logs/cluster/{rule}.{wildcards}.err"
+
+paragraph:
+  mem: 32
+  time: "24:00:00"
+  threads: 8

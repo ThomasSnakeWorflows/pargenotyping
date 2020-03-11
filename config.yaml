@@ -1,0 +1,4 @@
+sample_file: samples.txt
+reference: /work2/genphyse/dynagen/tfaraut/CNVPipeline/work/vargoats/tinydata/hsa10.fa
+inputvcf: /work2/genphyse/dynagen/tfaraut/CNVPipeline/work/vargoats/frch-saa/vargoats/mantasv/DEL_merged.vcf.gz
+workdir: "genotypes"
