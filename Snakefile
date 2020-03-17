@@ -7,6 +7,16 @@ import json
 
 chrom_regex = re.compile('(chr)?([1-9][0-9]?|[XY])')
 
+DEFAULT_THREADS = 8
+
+def get_threads(rule, default=DEFAULT_THREADS):
+    cluster_config = snakemake.workflow.cluster_config
+    if rule in cluster_config and "threads" in cluster_config[rule]:
+        return cluster_config[rule]["threads"]
+    if "default" in cluster_config and "threads" in cluster_config["default"]:
+        return cluster_config["default"]["threads"]
+    return default
+
 
 def get_max_reads(sample, sampleinfos):
     infos = pd.read_table(sampleinfos).set_index("id", drop=False)
@@ -76,27 +86,31 @@ rule variants:
     input:
         inputvcf
     output:
-        temp("{sample}/input.vcf")
+        "variants.vcf"
     shell:
-        "bcftools view -s {wildcards.sample} {input} > {output}"
+        "bcftools view --drop-genotypes {input} -Ov -o {output}"
 
 
 rule paragraph:
     message: """ --- trigger the paragraph genotyping --- """
     input:
-        inputvcf = "{sample}/input.vcf",
+        inputvcf = "variants.vcf",
         sampleinfo = "{sample}/sample.txt",
         reference = reference
     output:
         "{sample}/genotypes.vcf.gz"
+    threads:
+        get_threads("paragraph")
     run:
         max_reads = get_max_reads(wildcards.sample, input.sampleinfo)
         cmd = "multigrmpy.py "
+        cmd += " -t %d" % threads
         cmd += " -i %s" % input.inputvcf
         cmd += " -m %s" % input.sampleinfo
         cmd += " -r %s" % input.reference
         cmd += " -M %d" % max_reads
         cmd += " -o %s" % wildcards.sample
+        print(cmd)
         shell(cmd)
         shell("tabix %s" % output[0])
 
