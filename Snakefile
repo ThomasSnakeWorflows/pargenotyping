@@ -1,13 +1,13 @@
 
 import os
-import pandas as pd
 import numpy as np
 import json
-
+from collections import defaultdict
 
 chrom_regex = re.compile('(chr)?([1-9][0-9]?|[XY])')
 
 DEFAULT_THREADS = 8
+
 
 def get_threads(rule, default=DEFAULT_THREADS):
     cluster_config = snakemake.workflow.cluster_config
@@ -19,8 +19,13 @@ def get_threads(rule, default=DEFAULT_THREADS):
 
 
 def get_max_reads(sample, sampleinfos):
-    infos = pd.read_table(sampleinfos).set_index("id", drop=False)
-    return 20*float(infos.loc[sample].depth)
+    with open(sampleinfos, 'r') as file_in:
+        headers = next(file_in, None).rstrip().split("\t")
+        samples = defaultdict()
+        for row in file_in:
+            fields = row.rstrip().split("\t")
+            samples[fields[0]] = dict(zip(headers, fields))
+    return 20*float(samples[sample]['depth'])
 
 
 def genome_depth(contigs_info):
@@ -31,23 +36,36 @@ def genome_depth(contigs_info):
     return np.mean(depth)
 
 
-def sample_info(idxdepth_file):
-    with open(idxdepth_file) as json_fin:
-        loaded_json = json.load(json_fin)
-        read_length = loaded_json["read_length"]
-        bam_path = loaded_json["bam_path"]
-        read_depth = genome_depth(loaded_json["contigs"])
-    return (bam_path, read_depth, read_length)
+def sample_info(raw_sampleinfo_file, samplename):
+    with open(raw_sampleinfo_file, 'r') as file_in:
+        first_line = next(file_in, None).rstrip()[2:]
+        headers = first_line.split("\t")
+        samples = defaultdict()
+        for row in file_in:
+            fields = row.rstrip().split("\t")
+            sample_d = dict(zip(headers, fields))
+            samples[sample_d['sampleName']] = sample_d
+    sample_info =  samples[samplename]
+    return float(sample_info['meanCoverage'])
 
 
-samples = pd.read_table(config["sample_file"]).set_index("sample", drop=False)
+def read_samples(sample_file):
+    with open(sample_file, 'r') as file_in:
+        headers = next(file_in, None)
+        samples = defaultdict()
+        for row in file_in:
+            fields = row.rstrip().split("\t")
+            samples[fields[0]] = fields[1]
+    return samples
 
+
+samples = read_samples(config['sample_file'])
 reference = os.path.abspath(config['reference'])
 inputvcf = os.path.abspath(config['inputvcf'])
 
 workdir: config['workdir']
 
-localrules: sampleinfo, variants, merge
+localrules: sampleinfo, variants, merge, depth, allinfo
 
 wildcard_constraints:
     sample="[A-Za-z0-9\-]+"
@@ -56,31 +74,74 @@ rule all:
     input:
         "genotypes.vcf.gz"
 
+rule allinfo:
+    input:
+        expand("{sample}/sampleinfo.txt", sample=samples)
+    output:
+        "allsampleinfo.txt"
+    shell:
+        "cat {input} > {output}"
+
 rule depth:
     input:
-        bam = lambda wildcards: samples.loc[wildcards.sample].bam,
-        reference = reference
+        bam = lambda wildcards: samples[wildcards.sample]
     output:
-        "{sample}/depth.json"
+        "{sample}/depth.txt"
     params:
-        reference = reference
+        region = config['statregion']
     threads:
         8
     shell:
-        "idxdepth --threads {threads} -b {input.bam} -r {params.reference} "
-        " > {output}"
+        """
+         sambamba depth region -L {params.region} {input.bam} -o {output}
+        """
 
 rule sampleinfo:
     input:
-        "{sample}/depth.json"
+        bam = lambda wildcards: samples[wildcards.sample],
+        depth = "{sample}/depth.txt"
     output:
-        "{sample}/sample.txt"
+        "{sample}/sampleinfo.txt"
+    params:
+        region = config['statregion']
+    threads:
+        1
     run:
+        cmd = "samtools stats  "
+        cmd += "%s " % input.bam
+        cmd += "%s " % params.region
+        cmd += " | grep ^FRL | cut -f 2-"
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, shell=True)
+        lines = result.stdout.decode("utf-8").split("\n")
+        length, counts = [], []
+        for line in lines:
+            if line:
+                l, c = line.split("\t")
+                length.append(int(l))
+                counts.append(int(c))
+        read_length = np.average(length, weights=counts)
         with open(output[0], "w") as fout:
-            fout.write("id\tpath\tdepth\tread length\n")
-            bam_path, read_depth, read_length = sample_info(input[0])
-            fout.write("%s\t%s\t%3.2f\t%d\n" %
-                       (wildcards.sample, bam_path, read_depth, read_length))
+                fout.write("id\tpath\tdepth\tread length\n")
+                read_depth = sample_info(input.depth, wildcards.sample)
+                fout.write("%s\t%s\t%3.2f\t%d\n" %
+                           (wildcards.sample, input.bam, read_depth, read_length))
+
+
+
+
+# rule sampleinfo:
+#     input:
+#         info = "{sample}/rawsampleinfo.txt",
+#         bam = lambda wildcards: samples[wildcards.sample]
+#     output:
+#         "{sample}/sampleinfo.txt"
+#     run:
+#         with open(output[0], "w") as fout:
+#             fout.write("id\tpath\tdepth\tread length\n")
+#             read_depth, read_length = sample_info(input.info, wildcards.sample)
+#             fout.write("%s\t%s\t%3.2f\t%d\n" %
+#                        (wildcards.sample, input.bam, read_depth, read_length))
+
 
 rule variants:
     input:
@@ -95,7 +156,7 @@ rule paragraph:
     message: """ --- trigger the paragraph genotyping --- """
     input:
         inputvcf = "variants.vcf",
-        sampleinfo = "{sample}/sample.txt",
+        sampleinfo = "{sample}/sampleinfo.txt",
         reference = reference
     output:
         "{sample}/genotypes.vcf.gz"
@@ -117,11 +178,11 @@ rule paragraph:
 
 rule merge:
     input:
-        expand("{sample}/genotypes.vcf.gz", sample=samples.index)
+        expand("{sample}/genotypes.vcf.gz", sample=samples.keys())
     output:
         "genotypes.vcf.gz"
     params:
-        num_sample=lambda w: len(samples.index)
+        num_sample=lambda w: len(samples.keys())
     shell:
         """
         if [ "{params.num_sample}" != 1 ];

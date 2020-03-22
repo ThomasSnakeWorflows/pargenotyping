@@ -1,4 +1,5 @@
 sample_file: samples.txt
-reference: /work2/genphyse/dynagen/tfaraut/CNVPipeline/work/vargoats/tinydata/hsa10.fa
-inputvcf: /work2/genphyse/dynagen/tfaraut/CNVPipeline/work/vargoats/frch-saa/vargoats/mantasv/DEL_merged.vcf.gz
+reference: /work2/genphyse/dynagen/tfaraut/CNVPipeline/work/vargoats/data/Capra_hircus_chr.fa
+inputvcf: /work2/genphyse/dynagen/tfaraut/CNVPipeline/work/vargoats/frch-saa/pargenotyping/indel19_frenchbreeds.vcf.gz
+statregion: "1:24000000-26000000"
 workdir: "genotypes"
