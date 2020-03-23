@@ -2,11 +2,12 @@
 import os
 import numpy as np
 import json
+import subprocess
 from collections import defaultdict
 
 chrom_regex = re.compile('(chr)?([1-9][0-9]?|[XY])')
 
-DEFAULT_THREADS = 8
+DEFAULT_THREADS = 2
 
 
 def get_threads(rule, default=DEFAULT_THREADS):
@@ -70,13 +71,42 @@ localrules: sampleinfo, variants, merge, depth, allinfo
 wildcard_constraints:
     sample="[A-Za-z0-9\-]+"
 
+
 rule all:
+    "samples.tar.gz",
+    "genotypes.vcf.gz"
+
+
+rule tarsamples:
     input:
+        expand("{sample}.tar.gz", sample=samples.keys())
+    output:
+        "samples.tar.gz"
+    shell:
+        """
+        mv -t samples {input}
+        tar zcvf {output} samples
+        rm -fr samples
+        """
+
+
+rule cleanparagraph:
+    input:
+        "{sample}/genotypes.vcf.gz",
         "genotypes.vcf.gz"
+    output:
+        tar="{sample}.tar.gz"
+    shell:
+        """
+        tar cvzf {wildcards.sample}.tar.gz {wildcards.sample}
+        rm -fr {wildcards.sample}
+        """
+
+
 
 rule allinfo:
     input:
-        expand("{sample}/sampleinfo.txt", sample=samples)
+        expand("{sample}/sampleinfo.txt", sample=samples.keys())
     output:
         "allsampleinfo.txt"
     shell:
@@ -90,7 +120,7 @@ rule depth:
     params:
         region = config['statregion']
     threads:
-        8
+        2
     shell:
         """
          sambamba depth region -L {params.region} {input.bam} -o {output}
@@ -125,22 +155,6 @@ rule sampleinfo:
                 read_depth = sample_info(input.depth, wildcards.sample)
                 fout.write("%s\t%s\t%3.2f\t%d\n" %
                            (wildcards.sample, input.bam, read_depth, read_length))
-
-
-
-
-# rule sampleinfo:
-#     input:
-#         info = "{sample}/rawsampleinfo.txt",
-#         bam = lambda wildcards: samples[wildcards.sample]
-#     output:
-#         "{sample}/sampleinfo.txt"
-#     run:
-#         with open(output[0], "w") as fout:
-#             fout.write("id\tpath\tdepth\tread length\n")
-#             read_depth, read_length = sample_info(input.info, wildcards.sample)
-#             fout.write("%s\t%s\t%3.2f\t%d\n" %
-#                        (wildcards.sample, input.bam, read_depth, read_length))
 
 
 rule variants:
